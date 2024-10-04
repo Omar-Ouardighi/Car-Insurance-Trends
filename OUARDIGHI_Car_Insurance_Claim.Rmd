@@ -1,0 +1,330 @@
+---
+title: "Exploring Car Insurance Trends"
+author: "OUARDIGHI Omar"
+date: "2023-12-27"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Associated Insurance Problem:
+
+The primary insurance problem this dataset can help address is understanding the factors that contribute to the likelihood of an insurance claim being filed. By analyzing these attributes, we can gain insights into risk factors that influence insurance claims. This is crucial for insurance companies for several reasons:
+
+-   Risk Assessment: Identifying high-risk drivers for more accurate policy pricing.
+
+-   Policy Personalization: Tailoring insurance policies based on individual risk profiles.
+
+-   Claim Prediction: Anticipating the likelihood of claims to better manage reserves and resources.
+
+-   Fraud Detection: Identifying patterns that may suggest fraudulent claims.
+
+The outcome of this analysis could inform strategies for premium calculation, policy design, and overall risk management in the insurance sector.
+
+# Data Overview
+
+-   **Dataset Composition:** The dataset contains various attributes related to individual insurance policyholders and their driving history ( 10000 obs. and 19 variables)
+
+-   **Key Attributes:**
+
+    -   **ID:** A unique identifier for each policyholder.
+
+    -   **Demographics:** Includes age (AGE), gender (GENDER), and race (RACE).
+
+    -   **Driving Experience (DRIVING_EXPERIENCE):** Categorized by years of experience.
+
+    -   **Education Level (EDUCATION):** Indicates the highest level of education attained.
+
+    -   **Income Bracket (INCOME):** Classifies the policyholder's income.
+
+    -   **Credit Score (CREDIT_SCORE):** A numerical representation of the policyholder's creditworthiness.
+
+    -   **Vehicle Ownership (VEHICLE_OWNERSHIP)**: Indicates whether the policyholder owns a vehicle.
+
+    -   **Vehicle Year (VEHICLE_YEAR):** Categorizes the vehicle as either 'before 2015' or 'after 2015'.
+
+    -   **Marital Status (MARRIED) and Children (CHILDREN):** Provide family background.
+
+    -   **Postal Code (POSTAL_CODE):** Represents the geographical area of the policyholder.
+
+    -   **Annual Mileage (ANNUAL_MILEAGE):** The estimated number of miles driven per year.
+
+    -   **Vehicle Type (VEHICLE_TYPE):** Type of vehicle insured.
+
+    -   **Speeding Violations (SPEEDING_VIOLATIONS), DUIs (DUIS), and Past Accidents (PAST_ACCIDENTS):** Indicate driving history.
+
+    -   **Outcome (OUTCOME):** Whether an insurance claim was filed (1) or not (0).
+
+```{r, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(DataExplorer)
+library(caret)
+library(randomForest)
+library(patchwork)
+library(dplyr)
+library(glmnet)
+library(cvms)
+library(ROCR)
+
+```
+
+# Exploratory Data Analysis
+
+```{r,echo=FALSE, results='hide'}
+data = read.csv('Car_Insurance_Claim.csv')
+str(data)
+```
+
+```{r,echo=FALSE, fig.show='hide'}
+plot_missing(data)
+```
+
+```{r,echo=FALSE}
+# Handling missing values in 'ANNUAL_MILEAGE' and 'CREDIT_SCORE'
+data$ANNUAL_MILEAGE <- ifelse(is.na(data$ANNUAL_MILEAGE), median(data$ANNUAL_MILEAGE, na.rm = TRUE), data$ANNUAL_MILEAGE)
+data$CREDIT_SCORE <- ifelse(is.na(data$CREDIT_SCORE), median(data$CREDIT_SCORE, na.rm = TRUE), data$CREDIT_SCORE)
+```
+
+```{r,echo=FALSE}
+data = data%>%mutate_if(is.character, as.factor)
+data$VEHICLE_OWNERSHIP = as.factor(data$VEHICLE_OWNERSHIP)
+data$MARRIED = as.factor(data$MARRIED)
+data$CHILDREN = as.factor(data$CHILDREN)
+```
+
+```{r,echo=FALSE}
+p1 <- ggplot(data, aes(x=factor(OUTCOME), y=SPEEDING_VIOLATIONS)) +
+  geom_boxplot() +
+  labs(title="Speeding Violations vs Outcome", x="Outcome", y="Speeding Violations")
+
+p2 <- ggplot(data, aes(x=factor(OUTCOME), y=CREDIT_SCORE)) +
+  geom_boxplot() +
+  labs(title="Credit Score vs Outcome", x="Outcome", y="Credit Score")
+p3 <- ggplot(data, aes(x=factor(OUTCOME), y=ANNUAL_MILEAGE)) +
+  geom_boxplot() +
+  labs(title="Annual Mileage vs Outcome", x="Outcome", y="Annual Mileage")
+
+p4 <- ggplot(data, aes(x=factor(OUTCOME), y=PAST_ACCIDENTS)) +
+  geom_boxplot() +
+  labs(title="Past Accidents vs Outcome", x="Outcome", y="Past Accidents") 
+
+```
+
+```{r,echo=FALSE}
+combined_plot <- p1 + p2 + p3 + p4  + plot_layout(ncol=2) 
+
+
+# Display the combined plot
+combined_plot
+```
+
+\
+Boxplots reveal relationships between SPEEDING_VIOLATIONS, CREDIT_SCORE, ANNUAL_MILEAGE, and PAST_ACCIDENTS with the OUTCOME variable. Key findings:
+
+-   Speeding Violations: Differences in median and range suggest an impact on outcomes.
+
+-   Credit Score: Notable distributions indicate a potential influence on the outcome.
+
+-   Annual Mileage: Differences suggest a relationship between driving amount and outcomes.
+
+-   Past Accidents: Clear distinctions hint at the significance of accident history in outcomes.
+
+```{r,echo=FALSE}
+p5 <- ggplot(data, aes(x = RACE, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = " RACE vs OUTCOME",
+       x = "Race",
+       y = "Count")  +
+  theme(legend.position = "none")
+
+p6 <- ggplot(data, aes(x = DRIVING_EXPERIENCE, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = " DRIVING_EXPERIENCE vs OUTCOME",
+       x = "DRIVING_EXPERIENCE",
+       y = "Count") +
+  theme(legend.position = "none")
+
+p7 <- ggplot(data, aes(x = INCOME, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = "INCOME vs OUTCOME",
+       x = "INCOME",
+       y = "Count") +
+  theme(legend.position = "none")
+
+p8 <- ggplot(data, aes(x = EDUCATION, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = "EDUCATION vs OUTCOME",
+       x = "EDUCATION",
+       y = "Count")
+
+```
+
+```{r,echo=FALSE}
+ p5 + p6 + p7 + p8  + plot_layout(ncol=2)
+```
+
+RACE: The difference in claim proportions between majority and minority races is small, with a marginally higher proportion of claims in the minority group.
+
+DRIVING_EXPERIENCE: A clear trend is visible where less experienced drivers (0-9 years) have a higher proportion of claims, which decreases as driving experience increases.
+
+EDUCATION: Individuals with no education have a higher proportion of claims compared to those with high school or university education.
+
+INCOME: The 'poverty' income group has a noticeably higher proportion of claims, whereas the 'upper class' group has the lowest.
+
+```{r,echo=FALSE}
+p9 <- ggplot(data, aes(x = VEHICLE_YEAR, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = "VEHICLE_YEAR vs OUTCOME",
+       x = "VEHICLE_YEAR",
+       y = "Count") +
+  theme(legend.position = "none")
+
+p10 <- ggplot(data, aes(x = VEHICLE_TYPE, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = "VEHICLE_TYPE vs OUTCOME",
+       x = "VEHICLE_TYPE",
+       y = "Count")
+
+p11 <- ggplot(data, aes(x = GENDER, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = " GENDER vs OUTCOME",
+       x = "Gender",
+       y = "Count") +
+  theme(legend.position = "none")
+
+p12 <- ggplot(data, aes(x = AGE, fill = factor(OUTCOME))) +
+  geom_bar(position = "stack", stat = "count") +
+  labs(title = "AGE vs OUTCOME",
+       x = "Age Group",
+       y = "Count") +
+  theme(legend.position = "none")
+
+p9 + p10 + p11 + p12  + plot_layout(ncol=2)
+
+```
+
+VEHICLE_YEAR: Owners of older vehicles (before 2015) have a higher proportion of claims compared to those with newer vehicles (after 2015).
+
+VEHICLE_TYPE: Sports car owners have a higher proportion of claims than sedan owners.
+
+AGE: The proportion of insurance claims is notably higher in the younger age group (16-25), and it decreases with age.
+
+GENDER: The difference in the proportion of claims between males and females is subtle, but males show a slightly higher propensity for claims.
+
+# Modeling:
+
+In order to predict the likelihood of insurance claims being filed, we used logistic regression and random forest models. The dataset undergoes one-hot encoding to handle categorical variables, ensuring compatibility with modeling techniques. The preprocessing steps, including the removal of an identifier variable and conversion of the outcome variable to a factor, contribute to data readiness.
+
+Following a meticulous train-test split, logistic regression and random forest models are fitted to the training data. The logistic regression model utilizes the generalized linear model framework, while the random forest model leverages an ensemble of decision trees. Both models are well-suited for binary classification tasks and are implemented using R packages, namely **`glm`** and **`randomForest`**.
+
+```{r,echo=FALSE}
+# One hot encoding 
+dmy <- dummyVars(" ~ .", data = data)
+data_encoded <- data.frame(predict(dmy, newdata = data))
+```
+
+```{r,echo=FALSE}
+# Splitting the data into training and testing sets
+
+set.seed(123)
+data_encoded <- data_encoded[, -which(names(data_encoded) == "ID")]
+data_encoded$OUTCOME <- factor(data_encoded$OUTCOME)
+
+index <- createDataPartition(data_encoded$OUTCOME, p = 0.80, list = FALSE)
+train_data <- data_encoded[index, ]
+test_data <- data_encoded[-index, ]
+```
+
+## Logistic Regression
+
+The logistic regression model exhibits robust predictive capabilities, with high accuracy, sensitivity, specificity, and precision. The AUC value further confirms its effectiveness in distinguishing between positive and negative outcomes.
+
+```{r,echo=FALSE}
+# Fitting a logistic regression model
+logistic <- glm(OUTCOME ~ ., 
+             data = train_data, family = "binomial")
+# Predicting and evaluating the model
+predictions <- predict(logistic, test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix = confusionMatrix(factor(predictions), test_data$OUTCOME)
+```
+
+```{r, echo=FALSE}
+accuracy <- conf_matrix$overall["Accuracy"]
+cat("Accuracy:", accuracy, "\n")
+sensitivity <- conf_matrix$byClass["Sensitivity"]
+cat("Sensitivity:", sensitivity, "\n")
+specificity <- conf_matrix$byClass["Specificity"]
+cat("Specificity:", specificity, "\n")
+precision <- conf_matrix$byClass["Pos Pred Value"]
+cat("Precision:", precision, "\n")
+
+```
+
+```{r,echo=FALSE}
+# Extract raw confusion matrix
+conf_matrix$table
+
+```
+
+```{r,echo=FALSE}
+# Plot the ROC curve
+prediction_objects <- prediction(predictions, test_data$OUTCOME)
+roc_object <- performance(prediction_objects, measure = "tpr", x.measure = "fpr")
+plot(roc_object, main = "ROC Curve", col = "blue", lwd = 2)
+ 
+# Add labels and a legend to the plot
+legend("bottomright", legend = 
+       paste("AUC =", round(performance(prediction_objects, measure = "auc")
+                            @y.values[[1]], 2)), col = "blue", lwd = 2)
+```
+
+## Random Forest Classifier:
+
+The random forest classification model, with 500 trees and 5 variables considered at each split, exhibits robust performance:
+
+```{r,echo=FALSE, results="hide"}
+
+classifier_RF <- randomForest(OUTCOME ~ ., 
+             data = train_data, proximity=TRUE)
+# Predicting the Test set results 
+y_pred = predict(classifier_RF, newdata = test_data) 
+  
+# Confusion Matrix 
+cfm = confusionMatrix(factor(y_pred), test_data$OUTCOME)
+
+print(classifier_RF)
+```
+
+```{r, echo=FALSE}
+accuracy <- cfm$overall["Accuracy"]
+cat("Accuracy:", accuracy, "\n")
+sensitivity <- cfm$byClass["Sensitivity"]
+cat("Sensitivity:", sensitivity, "\n")
+specificity <- cfm$byClass["Specificity"]
+cat("Specificity:", specificity, "\n")
+precision <- cfm$byClass["Pos Pred Value"]
+cat("Precision:", precision, "\n")
+```
+
+```{r, echo=FALSE}
+# Extract raw confusion matrix
+cfm$table
+```
+
+The Plot shows that the Error rate is stabilized with an increase in the number of trees.
+
+```{r echo=FALSE}
+plot(classifier_RF) 
+```
+
+# **Analysis and Conclusion**
+
+-   **Performance**: Both models show good performance, with logistic regression slightly outperforming random forest in terms of accuracy and sensetivity for claims.
+
+-   **Model Choice**: Logistic regression, despite its simplicity, performs competitively with the more complex random forest model in this case. This might be due to the nature of the data or the way features interact in this particular dataset.
+
+-   **Potential Improvements**: Further tuning of hyperparameters, feature engineering, or trying other models like gradient boosting might improve performance. Additionally, investigating and understanding feature importance could provide insights for better model training and interpretation.
+
+In summary, for this dataset, logistic regression is a strong candidate given its performance and simplicity, but there's room for exploration with more complex models or further data analysis.
